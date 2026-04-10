@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OJ 批次提交工具</title>
+  <style>
+    :root {
+      --bg: #f7f3ea;
+      --panel: #fffef9;
+      --ink: #1f2a37;
+      --muted: #5c6773;
+      --brand: #b74b2a;
+      --brand-2: #d1713d;
+      --ok: #157a4a;
+      --bad: #a62f2f;
+      --line: #eadfce;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--serif);
+      color: var(--ink);
+      background:
+        radial-gradient(1100px 500px at 100% 0%, rgba(209,113,61,.15), transparent 60%),
+        radial-gradient(900px 380px at 0% 100%, rgba(183,75,42,.12), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 24px 16px 52px;
+      animation: fadeUp .45s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      letter-spacing: .4px;
+    }
+
+    .lead {
+      color: var(--muted);
+      margin: 0 0 18px;
+    }
+
+    .notice {
+      margin: 0 0 12px;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      border: 1px solid #d9cab3;
+      background: #fff7ed;
+      color: #5e4027;
+    }
+
+    .notice.ok {
+      border-color: #8ec9ab;
+      background: #ecfff4;
+      color: #145537;
+    }
+
+    .notice.bad {
+      border-color: #e6b2b2;
+      background: #fff0f0;
+      color: #7f2323;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(12, 1fr);
+    }
+
+    .card {
+      grid-column: span 12;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 6px 20px rgba(33, 22, 11, 0.05);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    @media (min-width: 960px) {
+      .left { grid-column: span 5; }
+      .right { grid-column: span 7; }
+    }
+
+    label {
+      display: block;
+      margin: 8px 0 5px;
+      font-size: 14px;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid #d4c7b0;
+      background: #fffdfa;
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      color: var(--ink);
+    }
+
+    input[type="password"] {
+      font-family: var(--mono);
+    }
+
+    textarea {
+      min-height: 180px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid #a54528;
+      background: linear-gradient(180deg, var(--brand-2), var(--brand));
+      color: #fff;
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      margin-right: 8px;
+      margin-top: 8px;
+    }
+
+    button.secondary {
+      background: #fff7ee;
+      color: #7b3d24;
+      border-color: #d9bb9a;
+    }
+
+    button:disabled {
+      opacity: .65;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin-top: 8px;
+      min-height: 24px;
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .chip {
+      border: 1px solid #d9cab3;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      color: #5f4d3c;
+      background: #fff9f2;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .table th, .table td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+    }
+
+    .table td.break {
+      word-break: break-all;
+      max-width: 280px;
+    }
+
+    .result-chip {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      border: 1px solid #d8c7ae;
+      background: #f8efe2;
+      color: #5b4734;
+      font-weight: 700;
+    }
+
+    .result-chip.ac {
+      border-color: #8ec9ab;
+      background: #ecfff4;
+      color: #155838;
+    }
+
+    .result-chip.bad {
+      border-color: #e6b2b2;
+      background: #fff0f0;
+      color: #7f2323;
+    }
+
+    .hint {
+      margin: 7px 0;
+      color: #6d5f50;
+      font-size: 12px;
+    }
+
+    .drop-zone {
+      margin-top: 8px;
+      border: 2px dashed #d9bb9a;
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+      background: #fff9f2;
+      color: #7b5d46;
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .drop-zone.active {
+      border-color: #b74b2a;
+      background: #fff2e4;
+    }
+
+    .path-box {
+      width: 100%;
+      border: 1px solid #d9cab3;
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fff7ed;
+      color: #6a533d;
+      font-family: var(--mono);
+      font-size: 12px;
+      word-break: break-all;
+      margin-top: 6px;
+    }
+
+    .steps {
+      margin: 0 0 14px;
+      padding: 10px 12px;
+      border: 1px solid #d9cab3;
+      border-radius: 12px;
+      background: #fff8ee;
+    }
+
+    .steps strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #5b3f2a;
+    }
+
+    .steps-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .step-chip {
+      font-size: 12px;
+      border: 1px solid #d9cab3;
+      border-radius: 999px;
+      padding: 3px 10px;
+      background: #fffef9;
+      color: #5f4b39;
+      font-weight: 700;
+    }
+
+    .step-chip.done {
+      border-color: #91caae;
+      background: #ebfff3;
+      color: #16583a;
+    }
+
+    .step-chip.current {
+      border-color: #c98652;
+      background: #fff0de;
+      color: #7a3e1f;
+    }
+
+    .step-chip.done.current {
+      border-color: #91caae;
+      background: #ebfff3;
+      color: #16583a;
+    }
+
+    .field-lock {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: #f3ede3;
+      border: 1px solid #e6dbc9;
+      border-radius: 6px;
+      padding: 0 6px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(24, 18, 10, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      z-index: 100;
+    }
+
+    .modal.hidden {
+      display: none;
+    }
+
+    .modal-card {
+      width: min(980px, 100%);
+      max-height: 90vh;
+      overflow: auto;
+      border-radius: 12px;
+      border: 1px solid #d9cab3;
+      background: #fffef9;
+      box-shadow: 0 14px 36px rgba(23, 16, 10, 0.18);
+      padding: 12px;
+    }
+
+    .code-view {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #e2d6c4;
+      background: #f8f4ec;
+      color: #2a3038;
+      white-space: pre;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.42;
+      max-height: 68vh;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>OJ 批次提交工具</h1>
+    <p class="lead">支援登入、競賽密碼驗證、批次送出程式碼、查詢提交狀態（適用 QingdaoU OnlineJudge API）</p>
+    <div class="steps">
+      <strong>建議流程（依序）</strong>
+      <div id="stepList" class="steps-list">
+        <span id="step1" class="step-chip">1. 設定站點</span>
+        <span id="step2" class="step-chip">2. 登入/匯入 Cookie</span>
+        <span id="step3" class="step-chip">3. 驗證競賽</span>
+        <span id="step4" class="step-chip">4. 上傳檔案</span>
+        <span id="step5" class="step-chip">5. 產生 JSON</span>
+      </div>
+    </div>
+    <div id="noticeBanner" class="notice hidden"></div>
+
+    <div class="grid">
+      <section class="card left">
+        <h2>1) 連線與登入</h2>
+        <label>OJ Base URL（例如 <code>https://your-oj.com</code>）</label>
+        <input id="baseUrl" placeholder="https://your-oj.com" />
+        <button id="btnConfig">設定站點</button>
+
+        <label>帳號</label>
+        <input id="username" placeholder="username" />
+        <label>密碼</label>
+        <input id="password" type="password" placeholder="password" />
+        <label>2FA（如果有啟用才填）</label>
+        <input id="tfaCode" placeholder="123456" />
+        <div>
+          <button id="btnLogin">登入</button>
+          <button id="btnLogout" class="secondary">登出</button>
+        </div>
+
+        <p class="hint">若你是 NID Login / 第三方登入，請在瀏覽器開發者工具複製 cookie 匯入（至少 sessionid）</p>
+        <label>Cookie Header（可整串貼上，例如 sessionid=...; csrftoken=...）</label>
+        <textarea id="cookieHeader" style="min-height:72px" placeholder="sessionid=xxxx; csrftoken=yyyy"></textarea>
+        <div class="row">
+          <div>
+            <label>或單獨填 sessionid</label>
+            <input id="sessionidInput" placeholder="sessionid" />
+          </div>
+          <div>
+            <label>或單獨填 csrftoken（選填）</label>
+            <input id="csrftokenInput" placeholder="csrftoken" />
+          </div>
+        </div>
+        <button id="btnImportCookie" class="secondary">匯入 Cookie 登入</button>
+
+        <div id="sessionChips" class="chips"></div>
+        <div id="loginStatus" class="status"></div>
+      </section>
+
+      <section class="card right">
+        <h2>2) 競賽與批次提交</h2>
+        <div class="row">
+          <div>
+            <label>contestId</label>
+            <input id="contestId" placeholder="123" />
+          </div>
+          <div>
+            <label>競賽密碼（若需要）</label>
+            <input id="contestPassword" type="password" placeholder="contest password" />
+          </div>
+        </div>
+
+        <button id="btnContestAccess" disabled>驗證競賽存取</button>
+
+        <div id="fileArea" class="field-lock">
+        <p class="hint">可直接上傳程式檔，會自動轉成批次 JSON</p>
+        <div class="path-box">參考資料夾：/Users/0blueyan0/Downloads/1142程式設計(III)[1241]-資訊一乙 程式設計III Week04作業-1519391（子資料夾底下如 D1450900_01.cpp、D1450900_02.cpp）</div>
+        <label>上傳程式檔（可多選，也可選資料夾）</label>
+        <input id="codeFiles" type="file" multiple webkitdirectory directory />
+        <div id="dropZone" class="drop-zone">拖曳多個程式檔到這裡</div>
+        <p class="hint">支援命名：<code>學號_題號.cpp</code>，例如 <code>d1225678_1.cpp</code>、<code>D1225678_01.cpp</code></p>
+        <button id="btnBuildFromFiles" class="secondary" disabled>由檔案產生批次 JSON</button>
+        </div>
+
+        <p class="hint">批次 JSON 格式（每個 item: tag, problemDisplayId, language, code）</p>
+        <div class="row">
+          <div>
+            <label>提交間隔秒數（預設 3 秒）</label>
+            <input id="submitIntervalSec" type="number" min="0" step="1" value="3" />
+          </div>
+        </div>
+        <textarea id="bulkJson">[]</textarea>
+        <div>
+          <button id="btnBulkSubmit">開始批次提交</button>
+          <button id="btnResumeJob" class="secondary">恢復後端任務</button>
+          <button id="btnRefreshStatus" class="secondary">查詢提交狀態</button>
+        </div>
+
+        <label>submissionIds（選填，留空會自動用目前結果）</label>
+        <input id="submissionIds" placeholder="id1,id2,id3" />
+
+        <div id="submitStatus" class="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>結果</h2>
+        <p class="hint">提示：查完狀態後可按每列右側「查看」直接看該筆程式碼</p>
+        <table class="table" id="resultTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>tag</th>
+              <th>problem</th>
+              <th>ok</th>
+              <th>submissionId</th>
+              <th>狀態</th>
+              <th>查看</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+
+  <div id="codeModal" class="modal hidden">
+    <div class="modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <strong id="codeModalTitle">程式碼</strong>
+        <button id="btnCloseCodeModal" class="secondary">關閉</button>
+      </div>
+      <pre id="codeModalBody" class="code-view"></pre>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const isString = (v) => typeof v === "string";
+    let latestSubmitRows = [];
+    let lastRenderedRows = [];
+    let lastRenderedMode = "submit";
+    let droppedFiles = [];
+    let activeJobId = "";
+    let jobPollTimer = null;
+
+    function setButtonBusy(id, busy, busyText) {
+      const el = $(id);
+      if (!el) return;
+      if (!el.dataset.normalText) {
+        el.dataset.normalText = el.textContent;
+      }
+      el.disabled = !!busy;
+      el.textContent = busy ? (busyText || "處理中...") : el.dataset.normalText;
+    }
+
+    function setNotice(message, ok) {
+      const el = $("noticeBanner");
+      if (!el) return;
+      if (!message) {
+        el.textContent = "";
+        el.className = "notice hidden";
+        return;
+      }
+      el.textContent = message;
+      if (ok === true) {
+        el.className = "notice ok";
+      } else if (ok === false) {
+        el.className = "notice bad";
+      } else {
+        el.className = "notice";
+      }
+    }
+
+    function setGlobalBusy(busy) {
+      const ids = [
+        "btnConfig", "btnLogin", "btnLogout", "btnImportCookie", "btnContestAccess",
+        "btnBuildFromFiles", "btnBulkSubmit", "btnResumeJob", "btnRefreshStatus"
+      ];
+      ids.forEach((id) => {
+        const el = $(id);
+        if (el) {
+          el.disabled = !!busy;
+        }
+      });
+    }
+
+    function setDisabled(id, disabled) {
+      const el = $(id);
+      if (el) el.disabled = !!disabled;
+    }
+
+    function setFileAreaEnabled(enabled) {
+      const area = $("fileArea");
+      if (!area) return;
+      area.classList.toggle("field-lock", !enabled);
+      setDisabled("codeFiles", !enabled);
+      setDisabled("btnBuildFromFiles", !enabled);
+    }
+
+    function hasValidItemsJson() {
+      try {
+        const raw = String($("bulkJson") ? $("bulkJson").value : "").trim();
+        if (!raw) return false;
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) && arr.length > 0;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function computeWorkflowStageFromFacts(stateOverride) {
+      const state = stateOverride || {};
+      const baseUrl = String(state.baseUrl || "").trim();
+      const contestId = String($("contestId") ? $("contestId").value : "").trim();
+      const hasFiles = ($("codeFiles") && $("codeFiles").files && $("codeFiles").files.length > 0) || (window.__droppedFilesCount || 0) > 0;
+      const isLoggedIn = !!state.loggedIn;
+      const hasContestAccess = !!(contestId && state.hasContestAccess && state.hasContestAccess[contestId] === true);
+
+      if (!baseUrl) return 1;
+      if (!isLoggedIn) return 2;
+      if (!hasContestAccess) return 3;
+      if (!hasFiles) return 4;
+      return 5;
+    }
+
+    function updateStepUI(stage, options) {
+      const opts = options || {};
+      const steps = ["step1", "step2", "step3", "step4", "step5"];
+      const current = Math.max(1, Math.min(5, Number(stage) || 1));
+      for (let i = 0; i < steps.length; i += 1) {
+        const el = $(steps[i]);
+        if (!el) continue;
+        el.classList.remove("done");
+        el.classList.remove("current");
+        if (i + 1 < current) el.classList.add("done");
+        if (i + 1 === current) el.classList.add("current");
+      }
+
+      if (current === 5 && $("step5") && window.__jsonGeneratedFromUpload && hasValidItemsJson()) {
+        $("step5").classList.add("done");
+      }
+
+      if (!opts.lockOnly) {
+        setDisabled("btnLogin", current < 2);
+        setDisabled("btnImportCookie", current < 2);
+        setDisabled("btnContestAccess", current < 3);
+        setFileAreaEnabled(current >= 4);
+        setDisabled("btnBulkSubmit", current < 5 || !window.__jsonGeneratedFromUpload || !hasValidItemsJson());
+      }
+
+      window.__workflowStage = current;
+    }
+
+    function clearSessionDependentUI() {
+      setStatus($("loginStatus"), "尚未登入", false);
+      const chips = $("sessionChips");
+      if (chips) chips.innerHTML = "";
+      setStatus($("submitStatus"), "", undefined);
+      setNotice("", undefined);
+      updateStepUI(1);
+    }
+
+    function setStatus(el, message, ok) {
+      el.textContent = message || "";
+      el.className = "status " + (ok === true ? "ok" : ok === false ? "bad" : "");
+    }
+
+
+    async function api(path, method = "GET", body) {
+      const res = await fetch(path, {
+        method,
+        headers: body ? { "content-type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        const msg = data.message || "HTTP " + res.status;
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    const PERSIST_KEY = "oj-batch-ui-v1";
+
+    window.__workflowStage = 1;
+    window.__sessionState = { baseUrl: "", loggedIn: false, hasContestAccess: {} };
+    window.__jsonGeneratedFromUpload = false;
+    window.__droppedFilesCount = 0;
+
+    function loadPersisted() {
+      try {
+        const raw = localStorage.getItem(PERSIST_KEY);
+        if (!raw) return {};
+        const data = JSON.parse(raw);
+        return data && typeof data === "object" ? data : {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function compactRowsForPersist(rows) {
+      const list = Array.isArray(rows) ? rows : [];
+      return list.map((r) => ({
+        id: r.id,
+        submissionId: r.submissionId,
+        tag: r.tag,
+        problem: r.problem,
+        problemDisplayId: r.problemDisplayId,
+        ok: r.ok,
+        message: r.message,
+        result: r.result,
+        resultShort: r.resultShort,
+        resultLabel: r.resultLabel,
+        code: ""
+      }));
+    }
+
+    function savePersisted() {
+      const data = {
+        baseUrl: $("baseUrl").value,
+        username: $("username").value,
+        password: $("password").value,
+        tfaCode: $("tfaCode").value,
+        cookieHeader: $("cookieHeader").value,
+        sessionid: $("sessionidInput").value,
+        csrftoken: $("csrftokenInput").value,
+        contestId: $("contestId").value,
+        contestPassword: $("contestPassword").value,
+        submitIntervalSec: $("submitIntervalSec").value,
+        bulkJson: $("bulkJson").value,
+        submissionIds: $("submissionIds").value,
+        activeJobId,
+        resultRows: compactRowsForPersist(lastRenderedRows),
+        resultMode: lastRenderedMode
+      };
+      try {
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+      } catch (err) {
+        try {
+          const lite = {
+            baseUrl: data.baseUrl,
+            username: data.username,
+            cookieHeader: data.cookieHeader,
+            sessionid: data.sessionid,
+            csrftoken: data.csrftoken,
+            contestId: data.contestId,
+            contestPassword: data.contestPassword,
+            submitIntervalSec: data.submitIntervalSec,
+            bulkJson: data.bulkJson,
+            submissionIds: data.submissionIds,
+            activeJobId: data.activeJobId,
+            resultRows: [],
+            resultMode: data.resultMode
+          };
+          localStorage.setItem(PERSIST_KEY, JSON.stringify(lite));
+        } catch (err2) {
+          // ignore localStorage failures to avoid blocking UI actions
+        }
+      }
+    }
+
+    function restorePersisted() {
+      const data = loadPersisted();
+      const mapping = [
+        ["baseUrl", "baseUrl"],
+        ["username", "username"],
+        ["password", "password"],
+        ["tfaCode", "tfaCode"],
+        ["cookieHeader", "cookieHeader"],
+        ["sessionid", "sessionidInput"],
+        ["csrftoken", "csrftokenInput"],
+        ["contestId", "contestId"],
+        ["contestPassword", "contestPassword"],
+        ["submitIntervalSec", "submitIntervalSec"],
+        ["bulkJson", "bulkJson"],
+        ["submissionIds", "submissionIds"]
+      ];
+      for (const [k, id] of mapping) {
+        if (Object.prototype.hasOwnProperty.call(data, k) && $(id)) {
+          $(id).value = data[k] || "";
+        }
+      }
+
+      activeJobId = isString(data.activeJobId) ? data.activeJobId : "";
+
+      window.__jsonGeneratedFromUpload = false;
+      window.__droppedFilesCount = 0;
+      droppedFiles = [];
+      window.__workflowStage = 1;
+      updateStepUI(1, { lockOnly: true });
+
+      if (Array.isArray(data.resultRows) && data.resultRows.length > 0) {
+        const mode = data.resultMode === "status" ? "status" : "submit";
+        latestSubmitRows = data.resultRows;
+        renderRows(data.resultRows, mode);
+      }
+
+      setStatus($("submitStatus"), "", undefined);
+      setNotice("", undefined);
+
+      const recomputed = computeWorkflowStageFromFacts(window.__sessionState || { loggedIn: false, hasContestAccess: {} });
+      updateStepUI(recomputed, { lockOnly: true });
+
+      if (window.__workflowStage >= 5 && !window.__jsonGeneratedFromUpload) {
+        setStatus($("submitStatus"), "已上傳檔案，請按『由檔案產生批次 JSON』完成第 5 步", undefined);
+      } else if (!String($("submitStatus").textContent || "").trim()) {
+        setStatus($("submitStatus"), "請依流程：先設定站點 -> 登入 -> 驗證競賽 -> 上傳檔案 -> 產生 JSON", undefined);
+      }
+    }
+
+    function enableAutoPersist() {
+      const ids = [
+        "baseUrl", "username", "password", "tfaCode", "cookieHeader", "sessionidInput", "csrftokenInput",
+        "contestId", "contestPassword", "submitIntervalSec", "bulkJson", "submissionIds"
+      ];
+      for (const id of ids) {
+        const el = $(id);
+        if (!el) continue;
+        el.addEventListener("input", savePersisted);
+        el.addEventListener("change", savePersisted);
+      }
+    }
+
+    function renderSession(state) {
+      const chips = [];
+      if (state.baseUrl) chips.push("base: " + state.baseUrl);
+      chips.push("login: " + (state.loggedIn ? "yes" : "no"));
+      if (state.username) chips.push("user: " + state.username);
+      const access = state.hasContestAccess || {};
+      Object.keys(access).forEach((k) => chips.push("contest " + k + ": " + (access[k] ? "access" : "no-access")));
+
+      $("sessionChips").innerHTML = chips.map((x) => "<span class=\"chip\">" + x + "</span>").join("");
+    }
+
+    function encodeAttr(str) {
+      return encodeURIComponent(String(str || ""));
+    }
+
+    function decodeAttr(str) {
+      try {
+        return decodeURIComponent(String(str || ""));
+      } catch (err) {
+        return String(str || "");
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function resultChipClass(shortCode) {
+      const s = String(shortCode || "").toUpperCase();
+      if (s === "AC") return "result-chip ac";
+      if (["WA", "TLE", "MLE", "RE", "CE", "SE"].includes(s)) return "result-chip bad";
+      return "result-chip";
+    }
+
+    function renderRows(rows, mode = "submit") {
+      lastRenderedRows = Array.isArray(rows) ? rows : [];
+      lastRenderedMode = mode === "status" ? "status" : "submit";
+      const tb = $("resultTable").querySelector("tbody");
+      tb.innerHTML = "";
+      rows.forEach((r, idx) => {
+        const tr = document.createElement("tr");
+        const okText = r.ok ? "yes" : "no";
+        const msg = mode === "status"
+          ? String(r.resultShort || r.resultLabel || r.result || r.message || "")
+          : String(r.message || "");
+        const problemText = isString(r.problem)
+          ? r.problem
+          : r.problem && typeof r.problem === "object"
+            ? (r.problem._id || r.problem.id || JSON.stringify(r.problem))
+            : (r.problemDisplayId || "");
+        const canViewCode = isString(r.code) && r.code.length > 0;
+        const safeCodeAttr = canViewCode ? encodeAttr(r.code) : "";
+        const safeTitleAttr = encodeAttr((r.submissionId || r.id || "") + " " + (problemText || ""));
+        const statusChip = mode === "status"
+          ? "<span class=\"" + resultChipClass(r.resultShort) + "\" title=\"" + escapeHtml(String(r.resultLabel || "")) + "\">" + escapeHtml(msg) + "</span>"
+          : "<span class=\"" + ((r.progressState === "pending" || r.progressState === "waiting" || r.progressState === "submitting") ? "result-chip" : (r.ok ? "result-chip ac" : "result-chip bad")) + "\">" + escapeHtml(msg) + "</span>";
+
+        tr.innerHTML =
+          "<td>" + (idx + 1) + "</td>" +
+          "<td>" + (r.tag || "") + "</td>" +
+          "<td class=\"break\">" + problemText + "</td>" +
+          "<td class=\"" + (r.ok ? "ok" : "bad") + "\">" + okText + "</td>" +
+          "<td class=\"break\">" + (r.submissionId || r.id || "") + "</td>" +
+          "<td class=\"break\">" + statusChip + "</td>" +
+          "<td>" + (canViewCode
+            ? "<button class=\"secondary view-code-btn\" data-code=\"" + safeCodeAttr + "\" data-title=\"" + safeTitleAttr + "\">查看</button>"
+            : "-") + "</td>";
+        tb.appendChild(tr);
+      });
+
+      tb.querySelectorAll(".view-code-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const title = decodeAttr(btn.getAttribute("data-title") || "程式碼");
+          const code = decodeAttr(btn.getAttribute("data-code") || "");
+          $("codeModalTitle").textContent = title;
+          $("codeModalBody").textContent = code;
+          $("codeModal").classList.remove("hidden");
+        });
+      });
+
+      savePersisted();
+    }
+
+    function stopJobPolling() {
+      if (jobPollTimer) {
+        clearInterval(jobPollTimer);
+        jobPollTimer = null;
+      }
+    }
+
+    async function syncJobToUI(job) {
+      if (!job) return;
+      activeJobId = job.jobId || activeJobId;
+      const rows = Array.isArray(job.rows) ? job.rows : [];
+      latestSubmitRows = rows;
+      renderRows(rows, "submit");
+
+      const currentNum = Math.max(0, Number(job.currentIndex || 0) + (job.status === "running" ? 1 : 0));
+      const total = Number(job.total || rows.length || 0);
+      if (job.status === "running" || job.status === "queued") {
+        setStatus($("submitStatus"), "後端任務執行中: " + currentNum + "/" + total + "，成功 " + (job.successCount || 0) + " 筆", true);
+        setNotice("後端任務進行中，可離開頁面後再回來查看", true);
+      } else if (job.status === "finished") {
+        setStatus($("submitStatus"), "後端任務完成: " + (job.successCount || 0) + "/" + total + " 成功", true);
+        setNotice("後端任務完成", true);
+      } else if (job.status === "failed") {
+        setStatus($("submitStatus"), "後端任務失敗: " + (job.lastMessage || "unknown"), false);
+        setNotice("後端任務失敗", false);
+      } else if (job.status === "cancelled") {
+        setStatus($("submitStatus"), "後端任務已取消", false);
+        setNotice("後端任務已取消", false);
+      }
+
+      savePersisted();
+    }
+
+    async function fetchJob(jobId) {
+      return api("/api/submissions/bulk/jobs/" + encodeURIComponent(jobId));
+    }
+
+    async function startJobPolling(jobId) {
+      stopJobPolling();
+      if (!jobId) return;
+      activeJobId = jobId;
+      savePersisted();
+
+      const pollOnce = async () => {
+        try {
+          const data = await fetchJob(jobId);
+          const job = data.job || null;
+          await syncJobToUI(job);
+          if (!job || (job.status !== "running" && job.status !== "queued")) {
+            stopJobPolling();
+          }
+        } catch (err) {
+          stopJobPolling();
+          setNotice("任務狀態輪詢失敗: " + err.message, false);
+        }
+      };
+
+      await pollOnce();
+      jobPollTimer = setInterval(pollOnce, 2000);
+    }
+
+    function normalizeLanguageToken(token) {
+      const t = String(token || "").trim().toLowerCase();
+      const map = {
+        cpp: "C++",
+        cxx: "C++",
+        cc: "C++",
+        c: "C",
+        py: "Python3",
+        py3: "Python3",
+        python: "Python3",
+        python3: "Python3",
+        java: "Java"
+      };
+      return map[t] || "";
+    }
+
+    function detectLanguageByExtension(fileName) {
+      const lower = String(fileName || "").toLowerCase();
+      if (lower.endsWith(".cpp") || lower.endsWith(".cc") || lower.endsWith(".cxx")) return "C++";
+      if (lower.endsWith(".c")) return "C";
+      if (lower.endsWith(".py")) return "Python3";
+      if (lower.endsWith(".java")) return "Java";
+      return "";
+    }
+
+    function normalizeProblemToken(token) {
+      const t = String(token || "").trim();
+      if (!t) return "";
+      if (/^[0-9]+$/.test(t)) {
+        return String(Number(t));
+      }
+      return t.toUpperCase();
+    }
+
+    function parseFileName(fileName) {
+      const base = String(fileName || "").replace(/\.[^.]+$/, "");
+      const parts = base.split(/[_\-.\s]+/).filter(Boolean);
+      let problemDisplayId = "";
+
+      if (parts.length >= 2 && /^[a-zA-Z]\d+$/i.test(parts[0]) && /^[0-9]+$/.test(parts[1])) {
+        problemDisplayId = normalizeProblemToken(parts[1]);
+      } else if (parts.length > 0) {
+        problemDisplayId = normalizeProblemToken(parts[0]);
+      }
+
+      let language = "";
+      const langSearchStart = (parts.length >= 2 && /^[a-zA-Z]\d+$/i.test(parts[0]) && /^[0-9]+$/.test(parts[1])) ? 2 : 1;
+      for (const p of parts.slice(langSearchStart)) {
+        language = normalizeLanguageToken(p);
+        if (language) break;
+      }
+      if (!language) {
+        language = detectLanguageByExtension(fileName);
+      }
+
+      const tag = base;
+      return { problemDisplayId, language, tag };
+    }
+
+    async function buildItemsFromFiles(fileList) {
+      const files = Array.from(fileList || []);
+      if (files.length === 0) {
+        throw new Error("請先選擇檔案或拖曳檔案");
+      }
+
+      const items = [];
+      for (const file of files) {
+        const displayName = file.webkitRelativePath && file.webkitRelativePath.length > 0
+          ? file.webkitRelativePath
+          : file.name;
+        const fileBaseName = displayName.split("/").pop() || file.name;
+        const meta = parseFileName(fileBaseName);
+        const code = await file.text();
+        items.push({
+          tag: displayName,
+          problemDisplayId: meta.problemDisplayId,
+          language: meta.language,
+          code
+        });
+      }
+
+      items.sort((a, b) => {
+        const pa = String(a.problemDisplayId || "");
+        const pb = String(b.problemDisplayId || "");
+        const na = /^\d+$/.test(pa) ? Number(pa) : NaN;
+        const nb = /^\d+$/.test(pb) ? Number(pb) : NaN;
+        if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
+          return na - nb;
+        }
+        if (pa !== pb) {
+          return pa.localeCompare(pb);
+        }
+        return String(a.tag || "").localeCompare(String(b.tag || ""));
+      });
+
+      return items;
+    }
+
+    async function refreshSessionView() {
+      const data = await api("/api/session");
+      const state = data.state || {};
+      window.__sessionState = state;
+      renderSession(state);
+      if (data && state.baseUrl && !$("baseUrl").value) {
+        $("baseUrl").value = state.baseUrl;
+      }
+
+      if (state.loggedIn) {
+        setStatus($("loginStatus"), "已登入: " + (state.username || "(unknown)"), true);
+      } else {
+        setStatus($("loginStatus"), "尚未登入", false);
+        if ($("noticeBanner").classList.contains("ok")) {
+          setNotice("目前未登入，請重新登入或重新匯入 Cookie", false);
+        }
+      }
+
+      const recomputed = computeWorkflowStageFromFacts(state);
+      updateStepUI(recomputed);
+
+      savePersisted();
+    }
+
+    $("btnConfig").onclick = async () => {
+      setButtonBusy("btnConfig", true, "設定中...");
+      try {
+        const baseUrl = $("baseUrl").value.trim();
+        await api("/api/config", "POST", { baseUrl });
+        setStatus($("loginStatus"), "站點設定成功", true);
+        setNotice("站點設定成功", true);
+        updateStepUI(2);
+        savePersisted();
+        await refreshSessionView();
+      } catch (err) {
+        setStatus($("loginStatus"), err.message, false);
+        setNotice("站點設定失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnConfig", false);
+      }
+    };
+
+    $("btnLogin").onclick = async () => {
+      setButtonBusy("btnLogin", true, "登入中...");
+      try {
+        const username = $("username").value.trim();
+        const password = $("password").value;
+        const tfaCode = $("tfaCode").value.trim();
+        await api("/api/login", "POST", { username, password, tfaCode });
+        setStatus($("loginStatus"), "登入成功", true);
+        setNotice("登入成功，可開始提交", true);
+        updateStepUI(3);
+        savePersisted();
+        await refreshSessionView();
+      } catch (err) {
+        setStatus($("loginStatus"), err.message, false);
+        setNotice("登入失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnLogin", false);
+      }
+    };
+
+    $("btnImportCookie").onclick = async () => {
+      setButtonBusy("btnImportCookie", true, "驗證 Cookie...");
+      try {
+        const cookieHeader = $("cookieHeader").value.trim();
+        const sessionid = $("sessionidInput").value.trim();
+        const csrftoken = $("csrftokenInput").value.trim();
+        await api("/api/cookies/import", "POST", { cookieHeader, sessionid, csrftoken });
+        setStatus($("loginStatus"), "Cookie 匯入成功", true);
+        setNotice("Cookie 登入成功，可開始提交", true);
+        updateStepUI(3);
+        savePersisted();
+        await refreshSessionView();
+      } catch (err) {
+        setStatus($("loginStatus"), err.message, false);
+        setNotice("Cookie 匯入失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnImportCookie", false);
+      }
+    };
+
+    $("btnLogout").onclick = async () => {
+      setButtonBusy("btnLogout", true, "登出中...");
+      try {
+        await api("/api/logout", "POST", {});
+        setStatus($("loginStatus"), "已登出", true);
+        setNotice("已登出", true);
+        window.__jsonGeneratedFromUpload = false;
+        await refreshSessionView();
+      } catch (err) {
+        setStatus($("loginStatus"), err.message, false);
+        setNotice("登出失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnLogout", false);
+      }
+    };
+
+    $("btnContestAccess").onclick = async () => {
+      setButtonBusy("btnContestAccess", true, "驗證中...");
+      try {
+        const contestId = $("contestId").value.trim();
+        const password = $("contestPassword").value;
+        const data = await api("/api/contest/access", "POST", { contestId, password });
+        setStatus($("submitStatus"), "contest access: " + data.access, data.access === true);
+        setNotice("競賽權限驗證: " + (data.access ? "可提交" : "不可提交"), data.access === true);
+        if (!data.access) {
+          window.__jsonGeneratedFromUpload = false;
+        }
+        updateStepUI(data.access ? 4 : 3);
+        savePersisted();
+        await refreshSessionView();
+      } catch (err) {
+        setStatus($("submitStatus"), err.message, false);
+        setNotice("競賽驗證失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnContestAccess", false);
+      }
+    };
+
+    const dropZone = $("dropZone");
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("active");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("active");
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("active");
+      droppedFiles = Array.from(e.dataTransfer.files || []);
+      window.__droppedFilesCount = droppedFiles.length;
+      window.__jsonGeneratedFromUpload = false;
+      setStatus($("submitStatus"), "已拖曳檔案: " + droppedFiles.length + " 個", true);
+      updateStepUI(Math.max(Number(window.__workflowStage || 1), 5));
+      setNotice("已完成第 4 步：檔案已上傳，請按『由檔案產生批次 JSON』", true);
+      savePersisted();
+    });
+
+    $("btnBuildFromFiles").onclick = async () => {
+      setButtonBusy("btnBuildFromFiles", true, "轉換中...");
+      try {
+        if ((window.__workflowStage || 1) < 4) {
+          throw new Error("請先完成競賽驗證，再上傳檔案與產生 JSON");
+        }
+        const picked = Array.from($("codeFiles").files || []);
+        const source = picked.length > 0 ? picked : droppedFiles;
+        window.__droppedFilesCount = source.length;
+        window.__jsonGeneratedFromUpload = false;
+        if (source.length === 0) {
+          throw new Error("請先上傳或拖曳檔案，再產生 JSON");
+        }
+        const items = await buildItemsFromFiles(source);
+        $("bulkJson").value = JSON.stringify(items, null, 2);
+        window.__jsonGeneratedFromUpload = true;
+        updateStepUI(5);
+        savePersisted();
+        setNotice("已完成第 5 步：JSON 轉換成功，可直接提交", true);
+
+        const invalid = items.filter((x) => !x.problemDisplayId || !x.language);
+        if (invalid.length > 0) {
+          setStatus($("submitStatus"), "已產生 JSON，但有 " + invalid.length + " 筆缺少題號或語言，請手動修正", false);
+          setNotice("檔案已轉換，但有欄位缺失需修正", false);
+        } else {
+          setStatus($("submitStatus"), "已由檔案產生 " + items.length + " 筆批次 JSON（第 5 步完成）", true);
+          setNotice("檔案轉換完成，共 " + items.length + " 筆（第 5 步完成）", true);
+        }
+      } catch (err) {
+        setStatus($("submitStatus"), err.message, false);
+        setNotice("檔案轉換失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnBuildFromFiles", false);
+        savePersisted();
+      }
+    };
+
+    $("codeFiles").addEventListener("change", () => {
+      const count = ($("codeFiles").files || []).length;
+      window.__droppedFilesCount = count;
+      window.__jsonGeneratedFromUpload = false;
+      if (count > 0 && (window.__workflowStage || 1) >= 4) {
+        updateStepUI(5);
+        setNotice("已完成第 4 步：檔案已上傳，請按『由檔案產生批次 JSON』", true);
+      }
+      savePersisted();
+    });
+
+    $("bulkJson").addEventListener("input", () => {
+      if (window.__jsonGeneratedFromUpload) {
+        window.__jsonGeneratedFromUpload = false;
+        if ((window.__workflowStage || 1) >= 5) {
+          updateStepUI(4);
+        }
+      }
+      savePersisted();
+    });
+
+    $("btnBulkSubmit").onclick = async () => {
+      setGlobalBusy(true);
+      setButtonBusy("btnBulkSubmit", true, "提交中...");
+      try {
+        if (!window.__jsonGeneratedFromUpload) {
+          throw new Error("請先上傳檔案並按『由檔案產生批次 JSON』，避免 JSON 與檔案不一致");
+        }
+        const contestId = $("contestId").value.trim();
+        const intervalSec = Number($("submitIntervalSec").value);
+        const intervalMs = Number.isFinite(intervalSec) ? Math.max(0, Math.floor(intervalSec * 1000)) : 3000;
+        let items = [];
+        try {
+          items = JSON.parse($("bulkJson").value);
+        } catch (e) {
+          throw new Error("bulk JSON 格式錯誤");
+        }
+        if (!Array.isArray(items)) {
+          throw new Error("bulk JSON 必須是陣列");
+        }
+
+        const intervalShownSec = Math.floor(intervalMs / 1000);
+        const estimateSec = Math.max(0, (items.length - 1) * intervalShownSec);
+        setStatus($("submitStatus"), "已開始提交：每 " + intervalShownSec + " 秒 1 筆，預估等待約 " + estimateSec + " 秒", true);
+        setNotice("任務已交給後端，關閉頁面後再回來也能繼續查看", true);
+
+        const data = await api("/api/submissions/bulk", "POST", {
+          contestId,
+          items,
+          intervalMs,
+          asyncMode: true
+        });
+        const job = data.job || null;
+        if (!job || !job.jobId) {
+          throw new Error("後端未回傳任務 ID");
+        }
+
+        await syncJobToUI(job);
+        await startJobPolling(job.jobId);
+      } catch (err) {
+        setStatus($("submitStatus"), err.message, false);
+        setNotice("提交失敗: " + err.message, false);
+      } finally {
+        setGlobalBusy(false);
+        setButtonBusy("btnBulkSubmit", false);
+      }
+    };
+
+    $("btnRefreshStatus").onclick = async () => {
+      setButtonBusy("btnRefreshStatus", true, "查詢中...");
+      try {
+        let ids = $("submissionIds").value
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+
+        if (ids.length === 0) {
+          ids = latestSubmitRows.map((x) => x.submissionId).filter(Boolean).map((x) => String(x));
+          $("submissionIds").value = ids.join(",");
+        }
+
+        if (ids.length === 0) {
+          throw new Error("目前沒有可查詢的 submissionId，請先提交或手動填入 submissionIds");
+        }
+
+        const data = await api("/api/submissions/status", "POST", { ids });
+        const rows = (data.detail || []).map((x) => ({
+          id: x.id,
+          ok: x.ok,
+          result: x.result,
+          resultShort: x.resultShort,
+          resultLabel: x.resultLabel,
+          message: x.message,
+          problem: x.problem,
+          code: x.code
+        }));
+        renderRows(rows, "status");
+        setStatus($("submitStatus"), "狀態查詢完成: " + rows.length + " 筆", true);
+        setNotice("狀態查詢完成: " + rows.length + " 筆", true);
+      } catch (err) {
+        setStatus($("submitStatus"), err.message, false);
+        setNotice("狀態查詢失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnRefreshStatus", false);
+      }
+    };
+
+    $("btnResumeJob").onclick = async () => {
+      setButtonBusy("btnResumeJob", true, "尋找任務中...");
+      try {
+        const list = await api("/api/submissions/bulk/jobs");
+        const jobs = Array.isArray(list.jobs) ? list.jobs : [];
+        if (jobs.length === 0) {
+          throw new Error("目前沒有可恢復的後端任務");
+        }
+
+        const running = jobs.find((j) => j.status === "running" || j.status === "queued") || jobs[0];
+        await startJobPolling(running.jobId);
+      } catch (err) {
+        setNotice("恢復任務失敗: " + err.message, false);
+      } finally {
+        setButtonBusy("btnResumeJob", false);
+      }
+    };
+
+    $("btnCloseCodeModal").onclick = () => {
+      $("codeModal").classList.add("hidden");
+    };
+
+    $("codeModal").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "codeModal") {
+        $("codeModal").classList.add("hidden");
+      }
+    });
+
+    restorePersisted();
+    enableAutoPersist();
+    updateStepUI(window.__workflowStage || 1, { lockOnly: true });
+    setStatus($("submitStatus"), "", undefined);
+    setNotice("", undefined);
+
+    refreshSessionView().catch(() => {
+      clearSessionDependentUI();
+      setStatus($("loginStatus"), "無法確認登入狀態（請檢查後端）", false);
+      setNotice("目前無法連線到本工具後端", false);
+    });
+
+    if (activeJobId) {
+      startJobPolling(activeJobId).catch(() => {});
+    }
+  </script>
+</body>
+</html>

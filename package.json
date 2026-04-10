@@ -1,0 +1,13 @@
+{
+  "name": "oj-batch-submit-web",
+  "version": "1.0.0",
+  "description": "Web UI for bulk code submission to QingdaoU OnlineJudge-compatible APIs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "express-session": "^1.18.1"
+  }
+}
