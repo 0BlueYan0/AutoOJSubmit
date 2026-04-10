@@ -246,6 +246,101 @@ function judgeResultShort(code) {
   return mapping[String(code)] || String(code);
 }
 
+function isPendingJudgeShort(shortCode) {
+  const s = String(shortCode || "").toUpperCase();
+  return s === "PD" || s === "JG" || s === "SUB" || s === "";
+}
+
+function applySubmissionDetailToRow(row, detail) {
+  if (!row || !detail) {
+    return;
+  }
+  row.result = detail.result;
+  row.resultShort = judgeResultShort(detail.result);
+  row.resultLabel = judgeResultLabel(detail.result);
+  row.code = isString(detail.code) ? detail.code : row.code;
+  row.language = detail.language || row.language;
+  row.problem = detail.problem || row.problem;
+}
+
+async function runJudgeFollowupTick(job) {
+  if (!job || job.cancelRequested || !job.state || !job.state.baseUrl) {
+    return 0;
+  }
+
+  const pendingRows = job.rows.filter((row) => row && row.submissionId && isPendingJudgeShort(row.resultShort));
+  if (pendingRows.length === 0) {
+    return 0;
+  }
+
+  const resolved = job.rows.filter((row) => row && row.submissionId && !isPendingJudgeShort(row.resultShort)).length;
+  const totalWithSubmissionId = job.rows.filter((row) => row && row.submissionId).length;
+  job.lastMessage = `判題查詢中 ${resolved}/${totalWithSubmissionId}`;
+
+  for (const row of pendingRows) {
+    if (job.cancelRequested) {
+      job.status = "cancelled";
+      job.lastMessage = "已取消";
+      return pendingRows.length;
+    }
+
+    row.progressState = "judging";
+    try {
+      const detailResult = await ojFetchWithState(job.state, `/api/submission?id=${encodeURIComponent(String(row.submissionId))}`);
+      if (detailResult.json && !detailResult.json.error && detailResult.json.data) {
+        const detail = detailResult.json.data;
+        applySubmissionDetailToRow(row, detail);
+        if (isPendingJudgeShort(row.resultShort)) {
+          row.message = `判題中 ${row.resultShort}`;
+        } else {
+          row.message = row.resultLabel || row.resultShort || "判題完成";
+          row.progressState = "done";
+        }
+      } else {
+        row.message = "查詢判題狀態失敗，稍後重試";
+      }
+    } catch (err) {
+      row.message = "查詢判題狀態失敗，稍後重試";
+    }
+  }
+
+  return job.rows.filter((row) => row && row.submissionId && isPendingJudgeShort(row.resultShort)).length;
+}
+
+async function runJudgeFollowupQueue(job, options = {}) {
+  const pollIntervalMs = Number.isFinite(Number(options.pollIntervalMs))
+    ? Math.max(500, Math.floor(Number(options.pollIntervalMs)))
+    : 2000;
+  const maxPollRounds = Number.isFinite(Number(options.maxPollRounds))
+    ? Math.max(1, Math.floor(Number(options.maxPollRounds)))
+    : 600;
+  const shouldStop = typeof options.shouldStop === "function"
+    ? options.shouldStop
+    : () => true;
+
+  for (let round = 0; round < maxPollRounds; round += 1) {
+    if (job.cancelRequested) {
+      job.status = "cancelled";
+      job.lastMessage = "已取消";
+      return;
+    }
+
+    const pendingCount = await runJudgeFollowupTick(job);
+    const stopRequested = shouldStop();
+
+    if (pendingCount === 0 && stopRequested) {
+      return;
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  const pendingCount = job.rows.filter((row) => row && row.submissionId && isPendingJudgeShort(row.resultShort)).length;
+  if (pendingCount > 0) {
+    job.lastMessage = `提交完成，但仍有 ${pendingCount} 筆判題中`;
+  }
+}
+
 const bulkJobs = new Map();
 
 function uid() {
@@ -276,6 +371,7 @@ function publicJob(job) {
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     rows: job.rows,
+    pendingJudgeCount: (job.rows || []).filter((row) => row && row.submissionId && isPendingJudgeShort(row.resultShort)).length,
     lastMessage: job.lastMessage
   };
 }
@@ -408,18 +504,23 @@ async function runBulkJob(job) {
           const detailResult = await ojFetchWithState(job.state, `/api/submission?id=${encodeURIComponent(String(submissionId))}`);
           if (detailResult.json && !detailResult.json.error && detailResult.json.data) {
             const detail = detailResult.json.data;
-            row.result = detail.result;
-            row.resultShort = judgeResultShort(detail.result);
-            row.resultLabel = judgeResultLabel(detail.result);
-            row.code = isString(detail.code) ? detail.code : row.code;
-            row.language = detail.language || row.language;
-            row.problem = detail.problem || row.problem;
+            applySubmissionDetailToRow(row, detail);
+            row.message = row.resultLabel || row.resultShort || "提交成功";
           }
         } catch (err) {
           // keep submission success state even if detail fetch fails
         }
       }
+
+      // Keep all previous PD/JG submissions refreshed during long batch submit.
+      await runJudgeFollowupTick(job);
     }
+
+    await runJudgeFollowupQueue(job, {
+      pollIntervalMs: 2000,
+      maxPollRounds: 600,
+      shouldStop: () => true
+    });
 
     if (job.status !== "cancelled") {
       job.status = "finished";

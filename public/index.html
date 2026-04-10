@@ -372,7 +372,7 @@
 <body>
   <div class="wrap">
     <h1>OJ 批次提交工具</h1>
-    <p class="lead">支援登入、競賽密碼驗證、批次送出程式碼、查詢提交狀態（適用 QingdaoU OnlineJudge API）</p>
+    <p class="lead">支援登入、競賽密碼驗證、批次送出程式碼與自動追蹤判題狀態（適用 QingdaoU OnlineJudge API）</p>
     <div class="steps">
       <strong>建議流程（依序）</strong>
       <div id="stepList" class="steps-list">
@@ -458,11 +458,7 @@
         <div>
           <button id="btnBulkSubmit">開始批次提交</button>
           <button id="btnResumeJob" class="secondary">恢復後端任務</button>
-          <button id="btnRefreshStatus" class="secondary">查詢提交狀態</button>
         </div>
-
-        <label>submissionIds（選填，留空會自動用目前結果）</label>
-        <input id="submissionIds" placeholder="id1,id2,id3" />
 
         <div id="submitStatus" class="status"></div>
       </section>
@@ -539,7 +535,7 @@
     function setGlobalBusy(busy) {
       const ids = [
         "btnConfig", "btnLogin", "btnLogout", "btnImportCookie", "btnContestAccess",
-        "btnBuildFromFiles", "btnBulkSubmit", "btnResumeJob", "btnRefreshStatus"
+        "btnBuildFromFiles", "btnBulkSubmit", "btnResumeJob"
       ];
       ids.forEach((id) => {
         const el = $(id);
@@ -700,7 +696,6 @@
         contestPassword: $("contestPassword").value,
         submitIntervalSec: $("submitIntervalSec").value,
         bulkJson: $("bulkJson").value,
-        submissionIds: $("submissionIds").value,
         activeJobId,
         resultRows: compactRowsForPersist(lastRenderedRows),
         resultMode: lastRenderedMode
@@ -719,7 +714,6 @@
             contestPassword: data.contestPassword,
             submitIntervalSec: data.submitIntervalSec,
             bulkJson: data.bulkJson,
-            submissionIds: data.submissionIds,
             activeJobId: data.activeJobId,
             resultRows: [],
             resultMode: data.resultMode
@@ -744,8 +738,7 @@
         ["contestId", "contestId"],
         ["contestPassword", "contestPassword"],
         ["submitIntervalSec", "submitIntervalSec"],
-        ["bulkJson", "bulkJson"],
-        ["submissionIds", "submissionIds"]
+        ["bulkJson", "bulkJson"]
       ];
       for (const [k, id] of mapping) {
         if (Object.prototype.hasOwnProperty.call(data, k) && $(id)) {
@@ -783,7 +776,7 @@
     function enableAutoPersist() {
       const ids = [
         "baseUrl", "username", "password", "tfaCode", "cookieHeader", "sessionidInput", "csrftokenInput",
-        "contestId", "contestPassword", "submitIntervalSec", "bulkJson", "submissionIds"
+        "contestId", "contestPassword", "submitIntervalSec", "bulkJson"
       ];
       for (const id of ids) {
         const el = $(id);
@@ -832,12 +825,47 @@
       return "result-chip";
     }
 
+    function extractStudentIdFromTag(tag) {
+      const t = String(tag || "");
+      const m = /([a-zA-Z]\d{6,9})/.exec(t);
+      if (!m) return "";
+      return String(m[1] || "").toUpperCase();
+    }
+
+    function sortRowsByStudentId(rows) {
+      const list = Array.isArray(rows) ? rows.slice() : [];
+      list.sort((a, b) => {
+        const ida = extractStudentIdFromTag(a && a.tag);
+        const idb = extractStudentIdFromTag(b && b.tag);
+        if (ida && idb && ida !== idb) {
+          return ida.localeCompare(idb);
+        }
+        if (ida && !idb) return -1;
+        if (!ida && idb) return 1;
+
+        const pa = String((a && a.problemDisplayId) || "");
+        const pb = String((b && b.problemDisplayId) || "");
+        const na = /^\d+$/.test(pa) ? Number(pa) : NaN;
+        const nb = /^\d+$/.test(pb) ? Number(pb) : NaN;
+        if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
+          return na - nb;
+        }
+        if (pa !== pb) {
+          return pa.localeCompare(pb);
+        }
+
+        return String((a && a.tag) || "").localeCompare(String((b && b.tag) || ""));
+      });
+      return list;
+    }
+
     function renderRows(rows, mode = "submit") {
-      lastRenderedRows = Array.isArray(rows) ? rows : [];
+      const sortedRows = sortRowsByStudentId(rows);
+      lastRenderedRows = sortedRows;
       lastRenderedMode = mode === "status" ? "status" : "submit";
       const tb = $("resultTable").querySelector("tbody");
       tb.innerHTML = "";
-      rows.forEach((r, idx) => {
+      sortedRows.forEach((r, idx) => {
         const tr = document.createElement("tr");
         const msg = mode === "status"
           ? String(r.resultShort || r.resultLabel || r.result || r.message || "")
@@ -901,21 +929,26 @@
       renderRows(rows, "submit");
 
       const finishedRows = rows.filter((r) => r && r.submissionId);
-      if (finishedRows.length > 0) {
-        const ids = finishedRows.map((r) => String(r.submissionId)).filter(Boolean);
-        $("submissionIds").value = ids.join(",");
-      }
+      // finished rows are already visible in table; no manual query ids needed
 
       const currentNum = Math.max(0, Number(job.currentIndex || 0) + (job.status === "running" ? 1 : 0));
       const total = Number(job.total || rows.length || 0);
       if (job.status === "running" || job.status === "queued") {
         hasRunningJob = true;
-        setStatus($("submitStatus"), "後端任務執行中: " + currentNum + "/" + total + "，成功 " + (job.successCount || 0) + " 筆", true);
+        const pendingJudgeCount = Number(job.pendingJudgeCount || 0);
+        const judgeHint = pendingJudgeCount > 0 ? ("，判題中 " + pendingJudgeCount + " 筆") : "";
+        setStatus($("submitStatus"), "後端任務執行中: " + currentNum + "/" + total + "，成功 " + (job.successCount || 0) + " 筆" + judgeHint, true);
         setNotice("後端任務進行中，可離開頁面後再回來查看", true);
       } else if (job.status === "finished") {
         hasRunningJob = false;
-        setStatus($("submitStatus"), "後端任務完成: " + (job.successCount || 0) + "/" + total + " 成功", true);
-        setNotice("後端任務完成", true);
+        const pendingJudgeCount = Number(job.pendingJudgeCount || 0);
+        if (pendingJudgeCount > 0) {
+          setStatus($("submitStatus"), "提交完成，但仍有 " + pendingJudgeCount + " 筆判題中", true);
+          setNotice("提交完成，仍有判題中的題目（PD/JG）", true);
+        } else {
+          setStatus($("submitStatus"), "後端任務完成: " + (job.successCount || 0) + "/" + total + " 成功", true);
+          setNotice("後端任務完成", true);
+        }
       } else if (job.status === "failed") {
         hasRunningJob = false;
         setStatus($("submitStatus"), "後端任務失敗: " + (job.lastMessage || "unknown"), false);
@@ -1308,45 +1341,6 @@
       } finally {
         setGlobalBusy(false);
         setButtonBusy("btnBulkSubmit", false);
-      }
-    };
-
-    $("btnRefreshStatus").onclick = async () => {
-      setButtonBusy("btnRefreshStatus", true, "查詢中...");
-      try {
-        let ids = $("submissionIds").value
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-
-        if (ids.length === 0) {
-          ids = latestSubmitRows.map((x) => x.submissionId).filter(Boolean).map((x) => String(x));
-          $("submissionIds").value = ids.join(",");
-        }
-
-        if (ids.length === 0) {
-          throw new Error("目前沒有可查詢的 submissionId，請先提交或手動填入 submissionIds");
-        }
-
-        const data = await api("/api/submissions/status", "POST", { ids });
-        const rows = (data.detail || []).map((x) => ({
-          id: x.id,
-          ok: x.ok,
-          result: x.result,
-          resultShort: x.resultShort,
-          resultLabel: x.resultLabel,
-          message: x.message,
-          problem: x.problem,
-          code: x.code
-        }));
-        renderRows(rows, "status");
-        setStatus($("submitStatus"), "狀態查詢完成: " + rows.length + " 筆", true);
-        setNotice("狀態查詢完成: " + rows.length + " 筆", true);
-      } catch (err) {
-        setStatus($("submitStatus"), err.message, false);
-        setNotice("狀態查詢失敗: " + err.message, false);
-      } finally {
-        setButtonBusy("btnRefreshStatus", false);
       }
     };
 
