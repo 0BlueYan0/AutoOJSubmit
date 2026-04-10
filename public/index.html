@@ -476,7 +476,6 @@
               <th>#</th>
               <th>tag</th>
               <th>problem</th>
-              <th>ok</th>
               <th>submissionId</th>
               <th>狀態</th>
               <th>查看</th>
@@ -507,6 +506,7 @@
     let droppedFiles = [];
     let activeJobId = "";
     let jobPollTimer = null;
+    let hasRunningJob = false;
 
     function setButtonBusy(id, busy, busyText) {
       const el = $(id);
@@ -562,6 +562,12 @@
       setDisabled("btnBuildFromFiles", !enabled);
     }
 
+    function updateSubmitButtonLock() {
+      const canSubmitByFlow = (window.__workflowStage || 1) >= 5 && window.__jsonGeneratedFromUpload && hasValidItemsJson();
+      setDisabled("btnBulkSubmit", !canSubmitByFlow || hasRunningJob);
+      setDisabled("btnResumeJob", hasRunningJob);
+    }
+
     function hasValidItemsJson() {
       try {
         const raw = String($("bulkJson") ? $("bulkJson").value : "").trim();
@@ -610,8 +616,9 @@
         setDisabled("btnImportCookie", current < 2);
         setDisabled("btnContestAccess", current < 3);
         setFileAreaEnabled(current >= 4);
-        setDisabled("btnBulkSubmit", current < 5 || !window.__jsonGeneratedFromUpload || !hasValidItemsJson());
       }
+
+      updateSubmitButtonLock();
 
       window.__workflowStage = current;
     }
@@ -832,10 +839,9 @@
       tb.innerHTML = "";
       rows.forEach((r, idx) => {
         const tr = document.createElement("tr");
-        const okText = r.ok ? "yes" : "no";
         const msg = mode === "status"
           ? String(r.resultShort || r.resultLabel || r.result || r.message || "")
-          : String(r.message || "");
+          : String(r.resultShort || r.message || "");
         const problemText = isString(r.problem)
           ? r.problem
           : r.problem && typeof r.problem === "object"
@@ -844,15 +850,19 @@
         const canViewCode = isString(r.code) && r.code.length > 0;
         const safeCodeAttr = canViewCode ? encodeAttr(r.code) : "";
         const safeTitleAttr = encodeAttr((r.submissionId || r.id || "") + " " + (problemText || ""));
+        const progressCode = String(r.progressState || "").toLowerCase();
+        const statusShort = String(r.resultShort || "").toUpperCase();
+        const isPendingStatus = progressCode === "pending" || progressCode === "waiting" || progressCode === "submitting" || statusShort === "PD" || statusShort === "JG" || statusShort === "SUB";
+        const isErrorStatus = ["WA", "TLE", "MLE", "RE", "CE", "SE", "ERR"].includes(statusShort);
+        const statusClass = isPendingStatus ? "result-chip" : (statusShort === "AC" ? "result-chip ac" : (isErrorStatus ? "result-chip bad" : "result-chip"));
         const statusChip = mode === "status"
           ? "<span class=\"" + resultChipClass(r.resultShort) + "\" title=\"" + escapeHtml(String(r.resultLabel || "")) + "\">" + escapeHtml(msg) + "</span>"
-          : "<span class=\"" + ((r.progressState === "pending" || r.progressState === "waiting" || r.progressState === "submitting") ? "result-chip" : (r.ok ? "result-chip ac" : "result-chip bad")) + "\">" + escapeHtml(msg) + "</span>";
+          : "<span class=\"" + statusClass + "\" title=\"" + escapeHtml(String(r.message || "")) + "\">" + escapeHtml(msg || "PD") + "</span>";
 
         tr.innerHTML =
           "<td>" + (idx + 1) + "</td>" +
           "<td>" + (r.tag || "") + "</td>" +
           "<td class=\"break\">" + problemText + "</td>" +
-          "<td class=\"" + (r.ok ? "ok" : "bad") + "\">" + okText + "</td>" +
           "<td class=\"break\">" + (r.submissionId || r.id || "") + "</td>" +
           "<td class=\"break\">" + statusChip + "</td>" +
           "<td>" + (canViewCode
@@ -879,6 +889,8 @@
         clearInterval(jobPollTimer);
         jobPollTimer = null;
       }
+      hasRunningJob = false;
+      updateSubmitButtonLock();
     }
 
     async function syncJobToUI(job) {
@@ -888,21 +900,33 @@
       latestSubmitRows = rows;
       renderRows(rows, "submit");
 
+      const finishedRows = rows.filter((r) => r && r.submissionId);
+      if (finishedRows.length > 0) {
+        const ids = finishedRows.map((r) => String(r.submissionId)).filter(Boolean);
+        $("submissionIds").value = ids.join(",");
+      }
+
       const currentNum = Math.max(0, Number(job.currentIndex || 0) + (job.status === "running" ? 1 : 0));
       const total = Number(job.total || rows.length || 0);
       if (job.status === "running" || job.status === "queued") {
+        hasRunningJob = true;
         setStatus($("submitStatus"), "後端任務執行中: " + currentNum + "/" + total + "，成功 " + (job.successCount || 0) + " 筆", true);
         setNotice("後端任務進行中，可離開頁面後再回來查看", true);
       } else if (job.status === "finished") {
+        hasRunningJob = false;
         setStatus($("submitStatus"), "後端任務完成: " + (job.successCount || 0) + "/" + total + " 成功", true);
         setNotice("後端任務完成", true);
       } else if (job.status === "failed") {
+        hasRunningJob = false;
         setStatus($("submitStatus"), "後端任務失敗: " + (job.lastMessage || "unknown"), false);
         setNotice("後端任務失敗", false);
       } else if (job.status === "cancelled") {
+        hasRunningJob = false;
         setStatus($("submitStatus"), "後端任務已取消", false);
         setNotice("後端任務已取消", false);
       }
+
+      updateSubmitButtonLock();
 
       savePersisted();
     }
@@ -915,6 +939,8 @@
       stopJobPolling();
       if (!jobId) return;
       activeJobId = jobId;
+      hasRunningJob = true;
+      updateSubmitButtonLock();
       savePersisted();
 
       const pollOnce = async () => {
@@ -1235,6 +1261,10 @@
     });
 
     $("btnBulkSubmit").onclick = async () => {
+      if (hasRunningJob) {
+        setNotice("已有後端任務在執行中，請先等待完成", false);
+        return;
+      }
       setGlobalBusy(true);
       setButtonBusy("btnBulkSubmit", true, "提交中...");
       try {
@@ -1321,6 +1351,10 @@
     };
 
     $("btnResumeJob").onclick = async () => {
+      if (hasRunningJob) {
+        setNotice("後端任務已在執行中", true);
+        return;
+      }
       setButtonBusy("btnResumeJob", true, "尋找任務中...");
       try {
         const list = await api("/api/submissions/bulk/jobs");
@@ -1351,6 +1385,7 @@
     restorePersisted();
     enableAutoPersist();
     updateStepUI(window.__workflowStage || 1, { lockOnly: true });
+    updateSubmitButtonLock();
     setStatus($("submitStatus"), "", undefined);
     setNotice("", undefined);
 
@@ -1361,6 +1396,8 @@
     });
 
     if (activeJobId) {
+      hasRunningJob = true;
+      updateSubmitButtonLock();
       startJobPolling(activeJobId).catch(() => {});
     }
   </script>

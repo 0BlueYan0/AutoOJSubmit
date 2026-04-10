@@ -121,9 +121,9 @@ function sleep(ms) {
 }
 
 function parseWaitSecondsFromMessage(message) {
-  const m = /Please wait\s+(\d+)\s+seconds/i.exec(String(message || ""));
+  const m = /please\s*wait\s*(\d+)\s*(?:seconds?|seaconds?|sec)/i.exec(String(message || ""));
   if (!m) {
-    return 0;
+    return null;
   }
   return Number(m[1]) || 0;
 }
@@ -354,6 +354,7 @@ async function runBulkJob(job) {
       row.progressState = "submitting";
       row.message = "提交中...";
       row.problemId = problem.id;
+      row.resultShort = "SUB";
 
       let submitResult = null;
       let retries = 0;
@@ -371,11 +372,12 @@ async function runBulkJob(job) {
         if (!submitResult.json || submitResult.json.error) {
           const errMsg = extractErrorMessage(submitResult, "提交失敗");
           const waitSeconds = parseWaitSecondsFromMessage(errMsg);
-          if (waitSeconds > 0 && attempt < 2) {
+          if (waitSeconds !== null && attempt < 2) {
             retries += 1;
             row.progressState = "waiting";
-            row.message = `等待重試 ${waitSeconds} 秒`;
-            await sleep((waitSeconds + 1) * 1000);
+            const retryWaitSec = Math.max(1, waitSeconds);
+            row.message = `等待重試 ${retryWaitSec} 秒`;
+            await sleep((retryWaitSec + 1) * 1000);
             continue;
           }
         }
@@ -386,6 +388,7 @@ async function runBulkJob(job) {
 
       if (!submitResult.json || submitResult.json.error) {
         row.ok = false;
+        row.resultShort = "ERR";
         row.message = extractErrorMessage(submitResult, "提交失敗");
         row.progressState = "done";
         job.failureCount += 1;
@@ -397,7 +400,25 @@ async function runBulkJob(job) {
       row.submissionId = submissionId;
       row.message = "提交成功";
       row.progressState = "done";
+      row.resultShort = "PD";
       job.successCount += 1;
+
+      if (submissionId) {
+        try {
+          const detailResult = await ojFetchWithState(job.state, `/api/submission?id=${encodeURIComponent(String(submissionId))}`);
+          if (detailResult.json && !detailResult.json.error && detailResult.json.data) {
+            const detail = detailResult.json.data;
+            row.result = detail.result;
+            row.resultShort = judgeResultShort(detail.result);
+            row.resultLabel = judgeResultLabel(detail.result);
+            row.code = isString(detail.code) ? detail.code : row.code;
+            row.language = detail.language || row.language;
+            row.problem = detail.problem || row.problem;
+          }
+        } catch (err) {
+          // keep submission success state even if detail fetch fails
+        }
+      }
     }
 
     if (job.status !== "cancelled") {
@@ -747,9 +768,10 @@ app.post("/api/submissions/bulk", async (req, res) => {
       if (!submitResult.json || submitResult.json.error) {
         const errMsg = extractErrorMessage(submitResult, "提交失敗");
         const waitSeconds = parseWaitSecondsFromMessage(errMsg);
-        if (waitSeconds > 0 && attempt < 2) {
+        if (waitSeconds !== null && attempt < 2) {
           retries += 1;
-          await sleep((waitSeconds + 1) * 1000);
+          const retryWaitSec = Math.max(1, waitSeconds);
+          await sleep((retryWaitSec + 1) * 1000);
           continue;
         }
       }
