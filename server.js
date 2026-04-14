@@ -376,6 +376,16 @@ function publicJob(job) {
   };
 }
 
+function logApiError(scope, err, extra = {}) {
+  const msg = err && err.message ? err.message : String(err);
+  const payload = {
+    scope,
+    message: msg,
+    ...extra
+  };
+  console.error("[OJ-API-ERROR]", JSON.stringify(payload));
+}
+
 async function runBulkJob(job) {
   job.status = "running";
   job.startedAt = new Date().toISOString();
@@ -527,6 +537,7 @@ async function runBulkJob(job) {
       job.lastMessage = `完成 ${job.successCount}/${job.total}`;
     }
   } catch (err) {
+    logApiError("runBulkJob", err, { jobId: job.jobId, contestId: job.contestId });
     job.status = "failed";
     job.lastMessage = err.message || "批次任務失敗";
   } finally {
@@ -569,6 +580,7 @@ app.post("/api/config", async (req, res) => {
     await ojFetch(req, "/api/profile");
     return res.json({ ok: true, message: "已設定站點" });
   } catch (err) {
+    logApiError("config", err, { baseUrl: normalized });
     return res.status(400).json({ ok: false, message: `站點連線失敗: ${err.message}` });
   }
 });
@@ -605,6 +617,7 @@ app.post("/api/login", async (req, res) => {
 
     return res.json({ ok: true, message: "登入成功", username: state.username });
   } catch (err) {
+    logApiError("login", err, { username: username && String(username).trim() });
     return res.status(500).json({ ok: false, message: `登入錯誤: ${err.message}` });
   }
 });
@@ -651,6 +664,7 @@ app.post("/api/cookies/import", async (req, res) => {
     state.username = user.username || "";
     return res.json({ ok: true, message: "Cookie 匯入成功", username: state.username });
   } catch (err) {
+    logApiError("cookies-import", err, { username: state.username || "" });
     return res.status(500).json({ ok: false, message: `Cookie 匯入錯誤: ${err.message}` });
   }
 });
@@ -692,6 +706,7 @@ app.post("/api/contest/access", async (req, res) => {
 
     return res.json({ ok: true, access });
   } catch (err) {
+    logApiError("contest-access", err, { contestId });
     return res.status(500).json({ ok: false, message: `競賽驗證錯誤: ${err.message}` });
   }
 });
@@ -727,6 +742,7 @@ app.post("/api/problems/resolve", async (req, res) => {
       languages: target.languages || []
     });
   } catch (err) {
+    logApiError("problems-resolve", err, { contestId, problemDisplayId });
     return res.status(500).json({ ok: false, message: `題目解析錯誤: ${err.message}` });
   }
 });
@@ -782,140 +798,147 @@ app.post("/api/submissions/bulk", async (req, res) => {
     };
 
     bulkJobs.set(jobId, job);
-    runBulkJob(job).catch(() => {});
+    runBulkJob(job).catch((err) => {
+      logApiError("bulk-job-background", err, { jobId, contestId });
+    });
 
     return res.json({ ok: true, async: true, job: publicJob(job) });
   }
 
-  const contestProblemList = await ojFetch(req, `/api/contest/problem?contest_id=${encodeURIComponent(String(contestId))}`);
-  if (!contestProblemList.json || contestProblemList.json.error) {
-    return res.status(400).json({
-      ok: false,
-      message: extractErrorMessage(contestProblemList, "無法取得競賽題目列表"),
-      raw: contestProblemList.json || contestProblemList.text
-    });
-  }
-  const problemMap = new Map();
-  for (const p of contestProblemList.json.data || []) {
-    problemMap.set(String(p._id).toUpperCase(), p);
-  }
-
-  const results = [];
-
-  for (let i = 0; i < items.length; i += 1) {
-    if (i > 0 && submitIntervalMs > 0) {
-      await sleep(submitIntervalMs);
-    }
-
-    const item = items[i] || {};
-    const problemDisplayId = String(item.problemDisplayId || "").trim();
-    const language = String(item.language || "").trim();
-    const code = isString(item.code) ? item.code : "";
-    const captcha = isString(item.captcha) && item.captcha.trim()
-      ? item.captcha.trim()
-      : isString(defaultCaptcha)
-        ? defaultCaptcha.trim()
-        : "";
-    const tag = isString(item.tag) ? item.tag : `item-${i + 1}`;
-
-    if (!problemDisplayId || !language || !code) {
-      results.push({
-        index: i,
-        tag,
-        problemDisplayId,
+  try {
+    const contestProblemList = await ojFetch(req, `/api/contest/problem?contest_id=${encodeURIComponent(String(contestId))}`);
+    if (!contestProblemList.json || contestProblemList.json.error) {
+      return res.status(400).json({
         ok: false,
-        message: "缺少 problemDisplayId/language/code"
+        message: extractErrorMessage(contestProblemList, "無法取得競賽題目列表"),
+        raw: contestProblemList.json || contestProblemList.text
       });
-      continue;
+    }
+    const problemMap = new Map();
+    for (const p of contestProblemList.json.data || []) {
+      problemMap.set(String(p._id).toUpperCase(), p);
     }
 
-    const problem = problemMap.get(problemDisplayId.toUpperCase());
-    if (!problem) {
-      results.push({
-        index: i,
-        tag,
-        problemDisplayId,
-        ok: false,
-        message: "題號不存在於此競賽"
-      });
-      continue;
-    }
+    const results = [];
 
-    if (!Array.isArray(problem.languages) || !problem.languages.includes(language)) {
-      results.push({
-        index: i,
-        tag,
-        problemDisplayId,
-        ok: false,
-        message: `語言不允許，可用: ${(problem.languages || []).join(", ")}`
-      });
-      continue;
-    }
+    for (let i = 0; i < items.length; i += 1) {
+      if (i > 0 && submitIntervalMs > 0) {
+        await sleep(submitIntervalMs);
+      }
 
-    let submitResult = null;
-    let retries = 0;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      submitResult = await ojFetch(req, "/api/submission", {
-        method: "POST",
-        body: JSON.stringify({
-          contest_id: Number(contestId),
-          problem_id: problem.id,
-          language,
-          code,
-          ...(captcha ? { captcha } : {})
-        })
-      });
+      const item = items[i] || {};
+      const problemDisplayId = String(item.problemDisplayId || "").trim();
+      const language = String(item.language || "").trim();
+      const code = isString(item.code) ? item.code : "";
+      const captcha = isString(item.captcha) && item.captcha.trim()
+        ? item.captcha.trim()
+        : isString(defaultCaptcha)
+          ? defaultCaptcha.trim()
+          : "";
+      const tag = isString(item.tag) ? item.tag : `item-${i + 1}`;
+
+      if (!problemDisplayId || !language || !code) {
+        results.push({
+          index: i,
+          tag,
+          problemDisplayId,
+          ok: false,
+          message: "缺少 problemDisplayId/language/code"
+        });
+        continue;
+      }
+
+      const problem = problemMap.get(problemDisplayId.toUpperCase());
+      if (!problem) {
+        results.push({
+          index: i,
+          tag,
+          problemDisplayId,
+          ok: false,
+          message: "題號不存在於此競賽"
+        });
+        continue;
+      }
+
+      if (!Array.isArray(problem.languages) || !problem.languages.includes(language)) {
+        results.push({
+          index: i,
+          tag,
+          problemDisplayId,
+          ok: false,
+          message: `語言不允許，可用: ${(problem.languages || []).join(", ")}`
+        });
+        continue;
+      }
+
+      let submitResult = null;
+      let retries = 0;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        submitResult = await ojFetch(req, "/api/submission", {
+          method: "POST",
+          body: JSON.stringify({
+            contest_id: Number(contestId),
+            problem_id: problem.id,
+            language,
+            code,
+            ...(captcha ? { captcha } : {})
+          })
+        });
+
+        if (!submitResult.json || submitResult.json.error) {
+          const errMsg = extractErrorMessage(submitResult, "提交失敗");
+          const waitSeconds = parseWaitSecondsFromMessage(errMsg);
+          if (waitSeconds !== null && attempt < 2) {
+            retries += 1;
+            const retryWaitSec = Math.max(1, waitSeconds);
+            await sleep((retryWaitSec + 1) * 1000);
+            continue;
+          }
+        }
+        break;
+      }
 
       if (!submitResult.json || submitResult.json.error) {
-        const errMsg = extractErrorMessage(submitResult, "提交失敗");
-        const waitSeconds = parseWaitSecondsFromMessage(errMsg);
-        if (waitSeconds !== null && attempt < 2) {
-          retries += 1;
-          const retryWaitSec = Math.max(1, waitSeconds);
-          await sleep((retryWaitSec + 1) * 1000);
-          continue;
-        }
+        results.push({
+          index: i,
+          tag,
+          problemDisplayId,
+          problemId: problem.id,
+          ok: false,
+          message: extractErrorMessage(submitResult, "提交失敗"),
+          retries,
+          raw: submitResult.json || submitResult.text
+        });
+        continue;
       }
-      break;
-    }
 
-    if (!submitResult.json || submitResult.json.error) {
+      const submissionId = submitResult.json.data && submitResult.json.data.submission_id ? submitResult.json.data.submission_id : null;
       results.push({
         index: i,
         tag,
         problemDisplayId,
         problemId: problem.id,
-        ok: false,
-        message: extractErrorMessage(submitResult, "提交失敗"),
+        ok: true,
+        submissionId,
         retries,
-        raw: submitResult.json || submitResult.text
+        message: "提交成功"
       });
-      continue;
     }
 
-    const submissionId = submitResult.json.data && submitResult.json.data.submission_id ? submitResult.json.data.submission_id : null;
-    results.push({
-      index: i,
-      tag,
-      problemDisplayId,
-      problemId: problem.id,
+    const successCount = results.filter((r) => r.ok).length;
+    return res.json({
       ok: true,
-      submissionId,
-      retries,
-      message: "提交成功"
+      async: false,
+      total: results.length,
+      successCount,
+      failureCount: results.length - successCount,
+      intervalMs: submitIntervalMs,
+      results
     });
+  } catch (err) {
+    logApiError("bulk-sync", err, { contestId, itemsCount: items.length });
+    return res.status(500).json({ ok: false, message: `批次提交錯誤: ${err.message}` });
   }
-
-  const successCount = results.filter((r) => r.ok).length;
-  return res.json({
-    ok: true,
-    async: false,
-    total: results.length,
-    successCount,
-    failureCount: results.length - successCount,
-    intervalMs: submitIntervalMs,
-    results
-  });
 });
 
 app.get("/api/submissions/bulk/jobs", (req, res) => {
@@ -978,6 +1001,7 @@ app.get("/api/captcha", async (req, res) => {
 
     return res.json({ ok: true, imageBase64: result.json.data || "" });
   } catch (err) {
+    logApiError("captcha", err);
     return res.status(500).json({ ok: false, message: `取得 captcha 錯誤: ${err.message}` });
   }
 });
@@ -1019,6 +1043,14 @@ app.post("/api/submissions/status", async (req, res) => {
   }
 
   return res.json({ ok: true, total: detail.length, detail });
+});
+
+app.use((err, req, res, next) => {
+  logApiError("unhandled", err, { path: req.path, method: req.method });
+  if (res.headersSent) {
+    return next(err);
+  }
+  return res.status(500).json({ ok: false, message: "伺服器內部錯誤" });
 });
 
 app.post("/api/logout", async (req, res) => {
